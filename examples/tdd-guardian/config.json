@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "testCommand": "<your test command, e.g. npm test>",
+  "coverageCommand": "<your coverage command, e.g. npm test -- --coverage>",
+  "coverageSummaryPath": "coverage/coverage-summary.json",
+  "mutationCommand": "",
+  "thresholds": {
+    "lines": 80,
+    "functions": 80,
+    "branches": 80,
+    "statements": 80
+  },
+  "enforceRedGreenRefactor": true,
+  "blockCommitOnFailure": false,
+  "blockCommitWithoutFreshGate": false,
+  "stack": "<your stack>"
+}

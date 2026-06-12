@@ -1,0 +1,35 @@
+{
+  "skill_name": "triage",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "feature X crashes when I give it an empty input",
+      "expected_output": "Classified as bug. Investigates the feature X handler in the codebase and finds it lacks an empty/null guard. Records in docs/bugs.md with next available ID. Reports the classification to the user.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "triage the inbox",
+      "expected_output": "Reads docs/tasks.md 'New' section. For each item: investigates code, checks for duplicates in bugs.md and features.md, classifies, records, moves to Triaged section.",
+      "files": ["docs/tasks.md"]
+    },
+    {
+      "id": 3,
+      "prompt": "can we add support for Y? the current module only handles the basic case",
+      "expected_output": "Classified as feature (never implemented, or partial). Investigates the existing module in the codebase. Records in docs/features.md. Does NOT start implementing.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "switching from option A to option B fails and the result never appears",
+      "expected_output": "Classified as bug. Investigates the relevant module and the state/store that holds the active option. Records in docs/bugs.md. Reports the classification to the user.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "the app hangs when I hit cancel mid-operation — the UI stays stuck on 'working'",
+      "expected_output": "Classified as bug. Investigates the cancel/abort handling in the relevant module. Records in docs/bugs.md with next available ID. Reports the classification to the user.",
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "language": "<your language, e.g. typescript, python, go>",
+  "framework": "<your docs framework, e.g. vitepress, mkdocs, sphinx>",
+  "docRoot": "<path to your docs root, e.g. docs/ or website/guide>",
+  "strictness": "warn",
+  "stalenessThresholdDays": 30,
+  "mappings": [
+    { "code": "<source path or dir>", "doc": "<the doc that must change when it changes>" }
+  ],
+  "exclude": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "coverage/**",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/__tests__/**"
+  ]
+}

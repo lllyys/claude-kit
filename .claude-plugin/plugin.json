@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "claude-kit",
+  "displayName": "Claude Kit",
+  "version": "0.1.0",
+  "description": "Stack-agnostic Claude Code toolkit: agents, process rules, slash commands, skills, and workflow hooks that drop into any coding project.",
+  "author": { "name": "lllyys" },
+  "homepage": "https://github.com/lllyys/claude-kit",
+  "repository": "https://github.com/lllyys/claude-kit",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "toolkit",
+    "agents",
+    "skills",
+    "tdd",
+    "feature-workflow",
+    "codex",
+    "plugin"
+  ],
+  "dependencies": ["cc-suite", "tdd-guardian", "docs-guardian", "claude-english-buddy"]
+}

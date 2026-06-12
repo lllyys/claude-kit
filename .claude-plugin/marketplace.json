@@ -1,0 +1,15 @@
+{
+  "name": "lllyys",
+  "owner": { "name": "lllyys" },
+  "metadata": {
+    "description": "lllyys's Claude Code plugins. Currently hosts claude-kit, a stack-agnostic toolkit for any coding project."
+  },
+  "allowCrossMarketplaceDependenciesOn": ["xiaolai"],
+  "plugins": [
+    {
+      "name": "claude-kit",
+      "source": ".",
+      "description": "Stack-agnostic Claude Code toolkit: agents, process rules, slash commands, skills, and workflow hooks for any coding project."
+    }
+  ]
+}
