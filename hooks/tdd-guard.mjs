@@ -5,8 +5,9 @@
 // test file exists.
 //
 // Scope (intentionally narrow to the high-risk layers you configure):
-//   See the SCOPED array below — fill it in with your project's
-//   high-risk source paths (e.g. payments, auth, billing).
+//   Project high-risk paths come from
+//   <project>/.claude/tdd-guard.paths.json (a JSON array of path
+//   prefixes). `/init` writes it; an empty/absent file disables the guard.
 //
 // Behavior:
 //   - For a Write/Edit/MultiEdit targeting a file in scope:
@@ -53,26 +54,38 @@ if (!filePath || typeof filePath !== "string") {
 }
 
 const abs = resolve(filePath);
-const repoRoot = resolve(import.meta.dirname, "..", "..");
+// In plugin form this hook runs from the plugin's install dir, so derive the
+// PROJECT root from the environment (Claude Code sets CLAUDE_PROJECT_DIR).
+const repoRoot = process.env.CLAUDE_PROJECT_DIR
+  ? resolve(process.env.CLAUDE_PROJECT_DIR)
+  : process.cwd();
 
 // Convert to a path relative to repo root for scope matching.
 const rel = abs.startsWith(repoRoot + "/") ? abs.slice(repoRoot.length + 1) : abs;
 
 // ── Scope check ─────────────────────────────────────────────────────────
-// Configure your project's high-risk paths here, e.g.
-//   /^src\/payments\//, /^src\/auth\//
-// Each entry is a regex matched against the repo-relative path. Leave
-// empty to disable the guard until you scope it to your codebase.
-const SCOPED = [
-  // configure your project's high-risk paths here, e.g. 'src/payments/', 'src/auth/'
-];
+// High-risk paths are configured per project in
+//   <project>/.claude/tdd-guard.paths.json
+// a JSON array of path prefixes (relative to the project root), e.g.
+//   ["src/payments/", "src/auth/"]
+// `/init` writes this file. If it is absent or empty, the guard is disabled.
+let SCOPED = [];
+try {
+  const raw = readFileSync(resolve(repoRoot, ".claude/tdd-guard.paths.json"), "utf8");
+  const parsed = JSON.parse(raw);
+  if (Array.isArray(parsed)) {
+    SCOPED = parsed.filter((p) => typeof p === "string" && p.length > 0);
+  }
+} catch {
+  // No config (or unreadable) → empty scope → guard disabled.
+}
 
 // Empty scope → nothing to guard; allow.
 if (SCOPED.length === 0) {
   process.exit(0);
 }
 
-const inScope = SCOPED.some((re) => re.test(rel));
+const inScope = SCOPED.some((p) => rel.startsWith(p));
 if (!inScope) {
   process.exit(0);
 }
@@ -135,8 +148,8 @@ const msg = [
   "  Per .claude/rules/10-tdd.md, RED comes before GREEN.",
   "  Write the failing test first, then this hook will allow the source edit.",
   "",
-  "  This guard is scoped to the high-risk paths configured in the SCOPED",
-  "  array at the top of this hook. Other source is not affected.",
+  "  This guard is scoped to the high-risk paths in",
+  "  .claude/tdd-guard.paths.json. Other source is not affected.",
   "",
 ].join("\n");
 

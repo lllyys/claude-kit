@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "claude-kit",
   "displayName": "Claude Kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Stack-agnostic Claude Code toolkit: agents, process rules, slash commands, skills, and workflow hooks that drop into any coding project.",
   "author": { "name": "lllyys" },
   "homepage": "https://github.com/lllyys/claude-kit",
