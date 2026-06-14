@@ -1,8 +1,7 @@
 # 60 - AI Governance
 
 Rules for keeping AI-assisted implementation honest across long-running
-multi-phase work. Background and field practices: see
-`dev-docs/grills/ai-governance-2026-05.md`.
+multi-phase work.
 
 ## 1. Plan files are the contract
 
@@ -85,7 +84,7 @@ plans that introduce new external dependencies.
 
 When a plan ADR rests on an unverified assumption about an external library
 or a third-party API's response/protocol shape, a Phase 0 spike (under
-`dev-docs/grills/<feature>/`) must validate the assumption with a runnable
+`dev-docs/spikes/<feature>/`) must validate the assumption with a runnable
 probe before any other phase commits. A Phase 0 of small, runnable spikes
 that each PASS before any feature WI starts is the template.
 

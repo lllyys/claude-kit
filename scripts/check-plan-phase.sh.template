@@ -27,7 +27,7 @@
 # runner — this script only checks the structural DoD that can be asserted
 # by file presence and grep. Interactive / live-app steps (spikes,
 # benchmarks needing a running app, security sign-offs) are gated on the
-# presence of PASS-marked grill docs the runner fills in, NOT auto-run here.
+# presence of PASS-marked spike docs the runner fills in, NOT auto-run here.
 
 set -uo pipefail
 
@@ -37,11 +37,11 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # ── Per-plan parameters — EDIT THESE ─────────────────────────────────────
-# TEMPLATE: point at your plan file, your grills/<feature>/ slug, and the
+# TEMPLATE: point at your plan file, your spikes/<feature>/ slug, and the
 # command that must be green before any phase ticks.
 PLAN="dev-docs/plans/YYYYMMDD-<plan>.md"   # the plan-of-record this gate enforces
-FEATURE="<feature>"                         # grills/test/locale slug for this plan
-GRILL="dev-docs/grills/${FEATURE}"          # Phase 0 spike write-ups live here
+FEATURE="<feature>"                         # spikes/test/locale slug for this plan
+SPIKE="dev-docs/spikes/${FEATURE}"          # Phase 0 spike write-ups live here
 GATE_REMINDER="<project full-check command, e.g. pnpm check:all>"
 
 # ── Arg parse + phase list ───────────────────────────────────────────────
@@ -116,7 +116,7 @@ assert_absent_code() {
 
 # assert_count_min <find-args…> -- <min> <label>
 # Counts matching files and requires at least <min>. Example:
-#   assert_count_min "$GRILL/fixtures" -name '*.yml' -o -name '*.yaml' -- 7 "fixture corpus"
+#   assert_count_min "$SPIKE/fixtures" -name '*.yml' -o -name '*.yaml' -- 7 "fixture corpus"
 assert_count_min() {
   local args=(); while [[ "$1" != "--" ]]; do args+=("$1"); shift; done; shift
   local min="$1"; local label="$2"
@@ -126,7 +126,7 @@ assert_count_min() {
 
 # assert_pass_marked <file> <label>
 # Gates an interactive/spike step on a machine-readable verdict line the
-# runner writes into the grill doc (NOT the prose word "PASS" in criteria).
+# runner writes into the spike doc (NOT the prose word "PASS" in criteria).
 # Adjust the regex to your verdict convention (vmark used both forms below).
 assert_pass_marked() {
   local file="$1"; local label="$2"
@@ -147,11 +147,11 @@ case "$PHASE" in
     # spikes per rule 60 §7). One assert_file + assert_pass_marked per spike.
     # TEMPLATE: list your spike slugs.
     for s in "spike-a" "spike-b"; do
-      assert_file "$GRILL/spike-${s}.md" "spike-${s} write-up"
-      [[ -f "$GRILL/spike-${s}.md" ]] && assert_pass_marked "$GRILL/spike-${s}.md" "spike-${s} marked PASS"
+      assert_file "$SPIKE/spike-${s}.md" "spike-${s} write-up"
+      [[ -f "$SPIKE/spike-${s}.md" ]] && assert_pass_marked "$SPIKE/spike-${s}.md" "spike-${s} marked PASS"
     done
     # Fixture corpus threshold (find + count).
-    assert_count_min "$GRILL/fixtures" -name '*.EXT' -- 7 "fixture corpus"
+    assert_count_min "$SPIKE/fixtures" -name '*.EXT' -- 7 "fixture corpus"
     # Plan body records each spike's outcome (traceability into the ADRs).
     assert_grep "Spike A result" "$PLAN" "plan ADR records Spike A outcome"
     ;;
@@ -182,9 +182,9 @@ case "$PHASE" in
   # 1B) echo "Phase 1B — …"; … ;;
 
   # TEMPLATE: a DEFERRED / ABORTED phase gates on the DECISION being recorded
-  # in the plan or grill doc, NOT on an implementation.
+  # in the plan or spike doc, NOT on an implementation.
   # 6)
-  #   assert_grep "PHASE 6 ABORTED" "$GRILL/<finding>.md" "Phase 6 abort decision recorded"
+  #   assert_grep "PHASE 6 ABORTED" "$SPIKE/<finding>.md" "Phase 6 abort decision recorded"
   #   ;;
 
   *)
