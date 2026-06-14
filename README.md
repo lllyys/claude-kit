@@ -120,6 +120,14 @@ claude-coding-kit/
 └── README.md
 ```
 
+## Origin
+
+Distilled from the `.claude/` setups of two of the author's own projects —
+**vmark** (a TypeScript / React / Rust / Tauri desktop app) and **vreader** — and
+generalized so nothing here is tied to a particular stack. vmark contributed most
+of the workflow, agents, hooks, and scripts; vreader contributed the UI-discipline
+rules (e.g. `rules/06-no-self-designed-ui.md`).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
