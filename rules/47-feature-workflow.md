@@ -6,6 +6,8 @@ Binding sequence for every feature implementation. Six gates, never skip one.
 
 This is a **gate model**, not a chronological task list. Each gate has an explicit acceptance bar; you do not enter the next gate until the current gate's bar is met. Multiple iterations within a gate are normal.
 
+Periodic strategic codebase review (`.claude/rules/60-ai-governance.md` §11) is **not** a seventh gate — it runs on its own slow cadence, off the per-change path. Its accepted findings re-enter here as an ordinary Gate 1 plan.
+
 ## Gate 1 — Plan
 
 Write `dev-docs/plans/YYYYMMDD-feature-N-<slug>.md` covering, at minimum:

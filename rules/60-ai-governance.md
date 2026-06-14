@@ -119,3 +119,47 @@ opening a PR; it does not touch any other manifest. The mechanics live in
 `.claude/rules/40-version-bump.md` (this rule does not duplicate them). The
 governance point: an AI agent must not invent a parallel version-bump across
 multiple files when the stack has a single authoritative version source.
+
+## 11. Periodic strategic codebase review
+
+The gates above and rule 47's six gates are all **per-change** — they prove each
+plan, diff, and dependency is individually sound. None catches *cumulative*
+decay: coupling that crept across many clean diffs, abstractions that went dead,
+layering from `.claude/rules/50-codebase-conventions.md` that eroded feature by
+feature, or a testing gap visible only repo-wide. That is a different altitude on
+a different cadence.
+
+Run a periodic, **whole-codebase adversarial review** against the *standing* tree
+(not a diff): **quarterly by default**, plus after a major architectural phase or
+a substantial jump in module/dependency count. This is **not a seventh gate** —
+it produces nothing mergeable and never blocks a change.
+
+- **The tool is replaceable.** Any whole-codebase architectural interrogator
+  satisfies this; `/grill:roast` (the `grill` plugin) is the reference
+  implementation, and it can run on Codex (`$grill-roast`) if you want the review
+  itself to be cross-model. grill is an **optional companion, not a declared
+  dependency** — don't assume it exists in an always-loaded rule or an unattended
+  job.
+- **The report is a fallible diagnostic, not authority.** A whole-tree review
+  reasons against a moving codebase and gets findings wrong (in practice several
+  per run are already-done or mis-scoped). The "fix everything" trust given to
+  the per-change Codex audit does **not** transfer here.
+- **Mandatory triage before anything becomes work:**
+
+  ```
+  diagnostic report
+    → validate each finding against live code
+    → accept / reject / defer (record the decision)
+    → governed plan in dev-docs/plans/ for accepted findings
+    → independent Codex plan review (§6)
+    → the six gates (rule 47) execute it per-change
+  ```
+
+  Never convert the report's own "fixing plan" straight into `dev-docs/plans/` —
+  that skips the validation that catches the wrong findings.
+- **Store the diagnostic separately** at
+  `dev-docs/architecture-reviews/YYYYMMDD-<scope>.md` — distinct from
+  `dev-docs/plans/` (governed work) and `dev-docs/spikes/` (Phase-0 probes).
+  Lead it with metadata so findings stay verifiable against a moving tree:
+  reviewed commit SHA, scope, tool + model, date, and the prior report it
+  supersedes.

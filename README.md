@@ -33,7 +33,7 @@ dependencies can resolve.
 | **skills/** | 15 | `planning`, `plan-audit`, `plan-verify`, `feature-workflow`, `fix-issue`, `file-bug`, `file-feature`, `triage`, `verify`, `release-gate`, `ai-coding-agents`, `cc-suite`, `mcp-dev`, `mcp-server-manager`, `workflow-audit`. |
 | **hooks/** | 8 + `hooks.json` | Prompt-refinement, evidence/issue-mirror gates, a TDD guard, a Codex-audit merge gate, and stop-time checks — wired via `hooks/hooks.json`. |
 | **rules/** | 12 | Engineering principles, **design-before-coding**, **no-self-designed-UI**, TDD, doc/comment sync, version bump, the binding 6-gate feature workflow, parallel execution, background shells, Codex-runner isolation, and AI governance. Shipped as bundled docs (see [Activating the rules](#activating-the-rules)). |
-| **cron-prompts/** | 4 | `bugfix`, `feature`, `verify`, `watchdog` prompts for scheduled-agent runs (via `/cron-bootstrap`). |
+| **cron-prompts/** | 5 | `bugfix`, `feature`, `verify`, `watchdog` (auto-bootstrapped via `/cron-bootstrap`), plus `architecture-review` (opt-in periodic strategic review — *not* bootstrapped). |
 
 Commands, agents, skills, and hooks activate automatically once the plugin is enabled.
 
@@ -94,6 +94,19 @@ marketplace), installed automatically:
 - **docs-guardian** — documentation staleness/coverage/accuracy.
 - **claude-english-buddy** — writing-quality feedback.
 
+## Optional companions
+
+Not auto-installed — reach for these when you want a capability the kit
+*references* but doesn't *require*:
+
+- **grill** (`xiaolai` marketplace) — the strategic/architectural-review layer
+  (rule 60 §11): a periodic, whole-codebase adversarial interrogation that
+  complements the kit's per-change gates. Install with
+  `/plugin install grill@xiaolai`. Treat its report as a **fallible diagnostic,
+  not authority** — validate findings against live code and route them through a
+  governed plan + Codex plan review before acting; never auto-apply its fixing
+  plan.
+
 ## What's intentionally excluded
 
 To stay universal, the following were left out (they're stack- or domain-specific):
@@ -114,7 +127,7 @@ claude-coding-kit/
 ├── skills/                # 15 skills
 ├── hooks/                 # hook scripts + hooks.json
 ├── rules/                 # 12 bundled process rules (opt-in via @import)
-├── cron-prompts/          # 4 scheduled-agent prompts
+├── cron-prompts/          # 4 bootstrapped + 1 opt-in (architecture-review)
 ├── examples/              # per-project config templates to copy in
 ├── LICENSE
 └── README.md

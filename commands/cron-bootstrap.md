@@ -52,6 +52,14 @@ When editing a schedule:
 - Put the most frequent crons (verify, bugfix — both hourly) on the
   even-15min slots so the gap between any two firings stays ≤ 30 min.
 
+## Not bootstrapped here
+
+`cron-prompts/architecture-review.md` is an **opt-in** periodic strategic review
+(rule 60 §11), deliberately kept OUT of this four-job contract: it's a
+slow-cadence (quarterly), expensive whole-codebase pass that diagnoses and files
+a plan — not an hourly/daily productive tick. If you want it, schedule it
+manually on a slow cadence; do **not** add it to the four crons above.
+
 ## Output
 
 A short confirmation:
