@@ -32,17 +32,24 @@ invisible until someone ran `ps`.
 
 ## Hard rules
 
-1. **Never call raw `codex exec` inside a backgrounded Bash.** Use
-   **`scripts/run-codex.sh`** (closes stdin, enforces a wall-clock watchdog on
-   the exact pid, prints one unambiguous `RUN-CODEX RESULT:` line) **or**
-   cc-suite's own `--background` runner (it has job tracking + a completion
-   signal). Both isolate stdin; a hand-rolled `codex exec` does not.
+1. **Never call raw `codex exec` inside a backgrounded Bash. Route every Codex
+   call through cc-suite** — `/cc-suite:audit` (read-only), `/cc-suite:audit-fix`
+   (audit→fix→verify), `/cc-suite:review-plan`, etc. cc-suite is a declared
+   dependency of this kit; its runner shells out to `codex exec` with stdin
+   closed (`/dev/null` on fd 0), a wall-clock deadline that kills the exact pid
+   (SIGTERM, then SIGKILL after a grace period), a heartbeat streamed to the job
+   log, and job tracking for `/cc-suite:status | result | cancel`. A hand-rolled
+   `codex exec` has none of this. **Never use the Codex MCP bridge**
+   (`mcp__codex…` / `mcp__plugin_codex-toolkit_codex__codex`) — it has no
+   controllable timeout and hangs on long single responses.
 2. **If you must call `codex exec` directly, close stdin: `< /dev/null`.** With
    immediate EOF, Codex runs normally — it does not need stdin when the prompt
-   is an argument. This is the single load-bearing fix.
+   is an argument. This is the single load-bearing fix, and it is exactly what
+   cc-suite's runner does for you.
 3. **Do not redirect a backgrounded long-runner's stdout to a side file.** Let
    it land in the task-output file so the harness's liveness + completion
-   notification work and a wedge is visible.
+   notification work and a wedge is visible. (cc-suite's `--background` mode
+   handles this via its job log — prefer it for long reviews.)
 4. **Diagnose "is it hung?" by PROCESS, not the output file** (rule 52's lesson,
    applied to Codex):
 
@@ -51,10 +58,14 @@ invisible until someone ran `ps`.
    ```
 
    A `codex` binary at **0% CPU with growing elapsed and no output growth** =
-   wedged. Kill it and re-run through the wrapper:
+   wedged. If it was launched through cc-suite, cancel it cleanly by job id:
 
    ```bash
-   pkill -9 -f "openai/codex.*/codex"
+   # cc-suite-launched job:
+   /cc-suite:cancel <jobId>
+   # raw fallback (note: the path pattern is macOS/BSD-shaped; on Linux match
+   # the binary name instead of its install path):
+   pkill -x codex        # exact process name, portable
    ```
 
 5. **Before ending a turn, confirm no live Codex ghost:** `pgrep -x codex`
@@ -63,18 +74,29 @@ invisible until someone ran `ps`.
 ## Quick reference
 
 ```bash
-# Bounded, stdin-isolated Codex audit (default gpt-5.4 / medium / 300s):
-scripts/run-codex.sh -o /tmp/audit.txt "Audit these files: …"
+# Read-only audit of the changed files (Codex audits; you fix):
+/cc-suite:audit
 
-# Longer budget for a big review:
-CODEX_TIMEOUT_SECS=600 scripts/run-codex.sh -m gpt-5.5 -e high "…"
+# Full audit→fix→verify loop (Codex drives the fixes; you review):
+/cc-suite:audit-fix
+
+# Long review without blocking the turn — runs detached, returns a jobId:
+/cc-suite:audit --background
+/cc-suite:status <jobId>   # live log
+/cc-suite:result <jobId>   # final result
+/cc-suite:cancel <jobId>   # kill a running job
 ```
+
+cc-suite reads model / effort / sandbox / timeout from `.cc-suite.md` (or
+sensible defaults), so there is no per-call flag bookkeeping to get wrong.
 
 ## Relationship to other rules
 
-- **Rule 49 (background shells):** the wrapper's watchdog waits on the exact pid
-  and is cancelled when Codex finishes first — it never re-arms on a future run.
+- **Rule 49 (background shells):** cc-suite's runner waits on the exact pid and
+  is cancelled when Codex finishes first — it never re-arms on a future run.
 - **Rule 52 (test isolation):** same ghost-class; same process-not-output
-  diagnosis. `run-codex.sh` is to `codex exec` what `run-tests.sh` is to
-  the project's test command — the watchdog that turns an indefinite hang into
-  a bounded, self-terminating run with one unambiguous result line.
+  diagnosis. cc-suite's runner is to `codex exec` what `run-tests.sh` is to the
+  project's test command — the watchdog that turns an indefinite hang into a
+  bounded, self-terminating run with one unambiguous result line.
+- **Rule 60 §6 (cross-model review):** `/cc-suite:review-plan` is the same
+  mechanism applied to plans — it goes through the same isolated runner.

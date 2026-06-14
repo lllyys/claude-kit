@@ -87,58 +87,45 @@ git diff main --name-only
 git diff main
 ```
 
-#### 4b. Initial audit via Codex MCP
+#### 4b. Initial audit via the configured Codex runner
 
-Use `ToolSearch` with query `+codex` to discover Codex tools.
+Run the project's configured **independent Codex audit runner**. Current
+runner: **`cc-suite`**, which drives Codex through `codex exec` (a killable,
+deadline-bounded CLI runner with job tracking). Do **NOT** use `ToolSearch
++codex` or the Codex MCP bridge (`mcp__codex__codex`) — cc-suite intentionally
+avoids the bridge because it has no controllable timeout and hangs on long
+responses (see `.claude/rules/53-codex-runner-isolation.md`). No availability
+ping: the first real call completes or fails fast; on failure go straight to
+**4f. Fallback**.
 
-**Model & reasoning**: Do NOT specify a `model` parameter — inherit from global `config.toml` so upgrades propagate automatically. Always set reasoning effort explicitly.
+Default to a **read-only audit** via **`/cc-suite:audit`** (Codex audits, *you*
+fix — this preserves the rule-48 author/auditor separation). Point it at the
+changed files (`git diff main --name-only`) and have it focus on:
 
-**Availability test** — before the real audit, send a short ping:
-```
-mcp__codex__codex with:
-  prompt: "Respond with 'ok' if you can read this."
-  config: { "model_reasoning_effort": "high" }
-```
-If Codex does not respond or errors out, skip to **4f. Fallback** immediately. Do not retry.
-
-If Codex responds:
-
-**Audit prompt:**
-```
-mcp__codex__codex with:
-  config: { "model_reasoning_effort": "high" }
-  sandbox: read-only
-  prompt: |
-    Audit these files changed for GitHub issue #{N}: {title}
-Files: {changed file list}
-Diff summary: {git diff main --stat}
-Focus:
 1. Correctness & logic — does the fix actually solve the root cause? No patching around symptoms.
-2. Edge cases — boundary conditions, null/empty, malformed input, concurrent access
-3. Error handling — failures surfaced clearly; no swallowed errors, no silent fallbacks
-4. Security — no vulnerabilities introduced (injection, untrusted input); secret/credential hygiene (never logged, never bundled, never sent to the wrong destination)
-5. No regressions — existing behavior preserved; the change doesn't break adjacent features
-6. Duplicate code — copy-paste patterns, repeated logic that should be unified
-7. Dead code — unused imports, unreachable branches, orphaned functions left behind
-8. Shortcuts & patches — workarounds, TODO markers, band-aids, flags to bypass broken logic
-9. Project conventions — follows this project's own layering, module boundaries, naming, and style rules; files stay reasonably small (~300 lines)
-    Report as: file:line | severity (Critical/High/Medium/Low) | issue | fix
-```
+2. Edge cases — boundary conditions, null/empty, malformed input, concurrent access.
+3. Error handling — failures surfaced clearly; no swallowed errors, no silent fallbacks.
+4. Security — no vulnerabilities introduced (injection, untrusted input); secret/credential hygiene (never logged, never bundled, never sent to the wrong destination).
+5. No regressions — existing behavior preserved; the change doesn't break adjacent features.
+6. Duplicate code — copy-paste patterns, repeated logic that should be unified.
+7. Dead code — unused imports, unreachable branches, orphaned functions left behind.
+8. Shortcuts & patches — workarounds, TODO markers, band-aids, flags to bypass broken logic.
+9. Project conventions — follows this project's own layering, module boundaries, naming, and style rules; files stay reasonably small (~300 lines).
+
+`/cc-suite:audit` reports findings as: `file:line | severity | issue | fix`.
+(`/cc-suite:audit-fix` runs the full audit→fix→verify loop with Codex driving
+the fixes — use it only if you want Codex-authored fixes and will review them
+yourself. `/cc-suite:status | result | cancel` track a running job.)
 
 #### 4c. Parse & fix
 
 Fix **every** finding — Critical, High, Medium, and Low. No exceptions, no "note in PR" deferrals. The audit is not clean until the finding count is zero.
 
-#### 4d. Verify via Codex reply
+#### 4d. Verify
 
-Use `mcp__codex__codex-reply` on the same thread (reasoning effort carries from initial call):
-
-```
-I fixed these issues: {list of fixes with file:line}
-Verify ALL fixes are correct. Check for new issues introduced by the fixes.
-The audit passes ONLY when zero findings remain — any severity.
-Updated diff: {git diff main --stat}
-```
+Re-run **`/cc-suite:audit`** on the updated diff to confirm every finding is
+resolved and no new issue was introduced. (If you used `/cc-suite:audit-fix`,
+its built-in verify pass already covers this.)
 
 #### 4e. Loop or exit
 
@@ -148,15 +135,33 @@ Updated diff: {git diff main --stat}
 
 #### 4f. Fallback — manual mini-audit
 
-If Codex MCP is unavailable, perform a manual 6-dimension audit per `/codex-audit-mini`:
-1. Logic & Correctness
-2. Duplication
-3. Dead Code
-4. Refactoring Debt
-5. Shortcuts & Patches
-6. Code Comments
+If the Codex runner is genuinely unavailable (the `codex` CLI is missing or
+unauthenticated, or cc-suite errors), perform a manual mini-audit — read each
+changed file and audit dimensions 1–8 from 4b above, fixing Critical/High inline.
 
-Read each changed file, analyze, fix Critical/High issues.
+#### 4g. Write the audit log artifact
+
+**Required before merge.** The `check_codex_audit_artifact.sh` hook blocks
+`gh pr merge` on a source-touching branch without an audit log. Write it before
+the merge (recommended before PR creation so review sees it):
+
+Path: `.claude/codex-audits/<branch-with-slashes-replaced-by-hyphens>-audit.md`
+
+```markdown
+---
+branch: <current branch, exactly as `git branch --show-current` returns>
+threadId: <Codex exec session id, or `manual-fallback` if 4f was used>
+rounds: <integer ≥ 1>
+final_verdict: ship-as-is | follow-up-recommended | block-recommended
+date: YYYY-MM-DD
+---
+```
+
+Body: per-round findings (`file:line | severity | issue | fix`), a resolution
+note per finding, and a summary verdict. If you used manual fallback, add a
+"Manual audit evidence" section per `.claude/rules/47-feature-workflow.md`.
+Commit it alongside the fix (e.g. `chore: codex audit log for issue #{N}`)
+before the PR opens.
 
 ### Phase 5: Gate
 
@@ -271,7 +276,7 @@ git worktree remove ../<repo>-worktree-{N}
 | Issue not found / closed | Warn, ask user |
 | Dirty working tree | Error, STOP |
 | No labels (ambiguous type) | Ask user to classify |
-| Codex MCP unavailable | Fall back to manual mini-audit |
+| Codex runner (cc-suite) unavailable | Fall back to manual mini-audit (Phase 4f) |
 | Gate fails 3x | Report errors, keep branch, STOP |
 | Feature too large (10+ files) | Redirect to `/feature-workflow` |
 | Branch already exists | Ask user: reuse or rename |

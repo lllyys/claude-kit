@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+#
+# TEMPLATE — per-plan phase-gate DoD checker.
+#
+# Copy this file to scripts/check-<plan>-phase.sh and fill in the
+# per-phase assertion blocks. This is the template referenced by
+# .claude/rules/60-ai-governance.md §3 ("Phase boundaries are gated by
+# scripts, not prose").
+#
+# How to use this template:
+#   1. cp scripts/check-plan-phase.sh.template scripts/check-<plan>-phase.sh
+#   2. Set the PLAN, FEATURE, and GATE_REMINDER variables below.
+#   3. Replace the usage phase list and the case dispatch with your plan's
+#      actual phases + machine-checkable Definition of Done.
+#   4. Delete every "TEMPLATE:" comment as you fill the block in.
+#
+# Plan: dev-docs/plans/YYYYMMDD-<plan>.md
+#
+# Usage: bash scripts/check-<plan>-phase.sh <phase-id>
+#
+# Each phase block runs the machine-checkable assertions for that phase's
+# Definition of Done. Exit 0 if all pass, non-zero if any fail. Run before
+# ticking the plan's Status header to the next phase.
+#
+# NOTE: "gates green" (the project's full check, e.g. `pnpm check:all` /
+# `cargo test` / `make check`) is verified separately by the human/agent
+# runner — this script only checks the structural DoD that can be asserted
+# by file presence and grep. Interactive / live-app steps (spikes,
+# benchmarks needing a running app, security sign-offs) are gated on the
+# presence of PASS-marked grill docs the runner fills in, NOT auto-run here.
+
+set -uo pipefail
+
+# ── Repo root ────────────────────────────────────────────────────────────
+# Scripts live in scripts/, so the repo root is one level up. All paths
+# below are repo-relative after this cd.
+cd "$(dirname "$0")/.."
+
+# ── Per-plan parameters — EDIT THESE ─────────────────────────────────────
+# TEMPLATE: point at your plan file, your grills/<feature>/ slug, and the
+# command that must be green before any phase ticks.
+PLAN="dev-docs/plans/YYYYMMDD-<plan>.md"   # the plan-of-record this gate enforces
+FEATURE="<feature>"                         # grills/test/locale slug for this plan
+GRILL="dev-docs/grills/${FEATURE}"          # Phase 0 spike write-ups live here
+GATE_REMINDER="<project full-check command, e.g. pnpm check:all>"
+
+# ── Arg parse + phase list ───────────────────────────────────────────────
+# TEMPLATE: list YOUR phases here. The id can be numeric (0..9) or mixed
+# (0, 1A, 1B, 2..6) — the case dispatch below keys on whatever you print.
+# Exit 64 (EX_USAGE) on missing arg.
+PHASE="${1:-}"
+if [[ -z "$PHASE" ]]; then
+  echo "Usage: $0 <phase-id>"
+  echo "  0  Feasibility spikes (de-risk gate)"
+  echo "  1  <phase 1 one-liner>"
+  echo "  2  <phase 2 one-liner>"
+  # … one line per phase …
+  exit 64
+fi
+
+# ── Counters + reporting helpers (shared skeleton, do not edit) ──────────
+PASS=0
+FAIL=0
+FAIL_DETAIL=()
+
+ok()   { echo "  ✓ $1"; PASS=$((PASS+1)); }
+fail() { echo "  ✗ $1"; FAIL=$((FAIL+1)); FAIL_DETAIL+=("$1"); }
+note() { echo "  · $1"; }   # informational / interactive-step marker, not a failure
+
+# ── Assertion library (shared skeleton, do not edit) ─────────────────────
+# Prefer BEHAVIOR checks (assert_grep on a load-bearing symbol) over bare
+# file-presence: an empty placeholder file passes `[[ -f … ]]` but proves
+# nothing. Use assert_file only when existence itself is the contract.
+
+# assert_file <path> [label]
+assert_file() {
+  local path="$1"; local label="${2:-$1}"
+  if [[ -f "$path" ]]; then ok "$label exists"; else fail "$label missing: $path"; fi
+}
+
+# assert_dir <path> [label]
+assert_dir() {
+  local path="$1"; local label="${2:-$1}"
+  if [[ -d "$path" ]]; then ok "$label exists"; else fail "$label missing: $path"; fi
+}
+
+# assert_grep <fixed-pattern> <file-or-dir> <label>  (fixed-string, recursive)
+assert_grep() {
+  local pattern="$1"; local target="$2"; local label="$3"
+  if grep -rqF -- "$pattern" "$target" 2>/dev/null; then ok "$label"; else fail "$label (pattern '$pattern' not in $target)"; fi
+}
+
+# assert_grep_re <ere-pattern> <file-or-dir> <label>
+assert_grep_re() {
+  local pattern="$1"; local target="$2"; local label="$3"
+  if grep -rqE -- "$pattern" "$target" 2>/dev/null; then ok "$label"; else fail "$label (regex '$pattern' not in $target)"; fi
+}
+
+# assert_absent_code <fixed-pattern> <file-or-dir> <label>
+# Passes when the pattern appears ONLY in comments (or not at all); fails if
+# it appears on a real code line. Strips grep's "path:lineno:" prefix BEFORE
+# the comment test so the anchor isn't defeated by the prefix.
+assert_absent_code() {
+  local pattern="$1"; local target="$2"; local label="$3"
+  local code_hits
+  code_hits=$(grep -rnHF -- "$pattern" "$target" 2>/dev/null \
+    | sed -E 's/^[^:]+:[0-9]+://' \
+    | grep -vE '^[[:space:]]*(//|/\*|\*|#)' \
+    | grep -cF -- "$pattern")
+  if [[ "${code_hits:-0}" -gt 0 ]]; then
+    fail "$label (pattern '$pattern' on $code_hits non-comment line(s) in $target)"
+  else
+    ok "$label"
+  fi
+}
+
+# assert_count_min <find-args…> -- <min> <label>
+# Counts matching files and requires at least <min>. Example:
+#   assert_count_min "$GRILL/fixtures" -name '*.yml' -o -name '*.yaml' -- 7 "fixture corpus"
+assert_count_min() {
+  local args=(); while [[ "$1" != "--" ]]; do args+=("$1"); shift; done; shift
+  local min="$1"; local label="$2"
+  local n; n=$(find "${args[@]}" 2>/dev/null | wc -l | tr -d ' ')
+  if (( n >= min )); then ok "$label ($n files)"; else fail "$label only $n files (need ≥$min)"; fi
+}
+
+# assert_pass_marked <file> <label>
+# Gates an interactive/spike step on a machine-readable verdict line the
+# runner writes into the grill doc (NOT the prose word "PASS" in criteria).
+# Adjust the regex to your verdict convention (vmark used both forms below).
+assert_pass_marked() {
+  local file="$1"; local label="$2"
+  if grep -Eq '^(VERDICT: PASS|> Status: \*\*PASS)' "$file" 2>/dev/null; then
+    ok "$label"
+  else
+    fail "$label (no PASS verdict line in $file)"
+  fi
+}
+
+# ── Phase dispatch ───────────────────────────────────────────────────────
+# TEMPLATE: one block per phase. Below are PATTERN exemplars distilled from
+# the three vmark gates — keep the shapes you need, delete the rest.
+case "$PHASE" in
+  0)
+    echo "Phase 0 — Feasibility spikes"
+    # Spike write-ups present and PASS-marked (gates a Phase 0 of runnable
+    # spikes per rule 60 §7). One assert_file + assert_pass_marked per spike.
+    # TEMPLATE: list your spike slugs.
+    for s in "spike-a" "spike-b"; do
+      assert_file "$GRILL/spike-${s}.md" "spike-${s} write-up"
+      [[ -f "$GRILL/spike-${s}.md" ]] && assert_pass_marked "$GRILL/spike-${s}.md" "spike-${s} marked PASS"
+    done
+    # Fixture corpus threshold (find + count).
+    assert_count_min "$GRILL/fixtures" -name '*.EXT' -- 7 "fixture corpus"
+    # Plan body records each spike's outcome (traceability into the ADRs).
+    assert_grep "Spike A result" "$PLAN" "plan ADR records Spike A outcome"
+    ;;
+
+  1)
+    echo "Phase 1 — FOUNDATION PHASE TITLE"
+    # WI-N.M — file presence where existence IS the contract.
+    assert_file "src/lib/FEATURE/types.ts" "WI-1.1 IR types"
+    # WI-N.M — BEHAVIOR check: a load-bearing symbol must be wired.
+    assert_grep "EXPORTED_SYMBOL" "src/lib/FEATURE/index.ts" "WI-1.2 orchestrator wired"
+    # Iterate a set of required sub-items (subparsers, patch kinds, locale keys…).
+    for k in "itemA" "itemB"; do
+      assert_grep "\"$k\"" "src/lib/FEATURE/FILE.ts" "WI-1.3 '$k' wired"
+    done
+    # Reminder: the project full-check must be green before the phase ticks.
+    note "remember: '$GATE_REMINDER' must pass before phase tick"
+    ;;
+
+  # TEMPLATE: numeric phases that aren't written yet — fail loudly so the
+  # gate can't be ticked past an undefined phase. Delete once filled in.
+  2|3|4|5)
+    echo "Phase $PHASE — stub (assertions added when Phase $PHASE begins)"
+    fail "Phase $PHASE DoD assertions not yet defined"
+    ;;
+
+  # TEMPLATE: mixed-id phases (e.g. a split phase 1A / 1B) use string labels.
+  # 1A) echo "Phase 1A — …"; … ;;
+  # 1B) echo "Phase 1B — …"; … ;;
+
+  # TEMPLATE: a DEFERRED / ABORTED phase gates on the DECISION being recorded
+  # in the plan or grill doc, NOT on an implementation.
+  # 6)
+  #   assert_grep "PHASE 6 ABORTED" "$GRILL/<finding>.md" "Phase 6 abort decision recorded"
+  #   ;;
+
+  *)
+    echo "Unknown phase: $PHASE" >&2
+    exit 64
+    ;;
+esac
+
+# ── Summary + exit (shared skeleton, do not edit) ────────────────────────
+echo
+echo "─────────────────────────────────────────────"
+echo "Phase $PHASE: $PASS passed, $FAIL failed"
+if (( FAIL > 0 )); then
+  echo
+  echo "Failed assertions:"
+  for d in "${FAIL_DETAIL[@]}"; do echo "  • $d"; done
+  exit 1
+fi
+exit 0
