@@ -73,10 +73,9 @@ Output:
      - WI numbering is sequential and referenced consistently.
      - Every WI includes tests + acceptance.
 
-5. **Write the plan file**
+5. **Emit the plan**
    - Use the template at `templates/TEMPLATE.md` (bundled with this skill) if available, otherwise follow the structure above.
-   - Write plans to `dev-docs/plans/YYYYMMDD-HHMM-<topic>.md`.
-   - Always report the saved plan path.
+   - **If you can write files**, save the plan to `dev-docs/plans/YYYYMMDD-HHMM-<topic>.md` and report the path. **If you are a read-only agent** (e.g. the `planner` subagent, tools `Read, Grep`), return the complete plan content instead and let the orchestrator write it — never claim to have written a file you cannot.
 
 ## Testing Requirements
 
@@ -126,5 +125,5 @@ If behavior changes are user-visible or risky:
 
 ## Output Requirements
 
-- Always produce a plan file and include its path in the response.
+- Produce the complete plan. If you can write, save it under `dev-docs/plans/` and include the path; if you are read-only, return the full plan content for the orchestrator to write.
 - Ask at most 1–2 clarifying questions only when they change the rules.

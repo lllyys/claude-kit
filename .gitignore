@@ -4,3 +4,7 @@ node_modules/
 
 # nlpm generated artifacts
 .claude/nlpm-history.json
+
+# python
+__pycache__/
+*.pyc

@@ -120,8 +120,12 @@ The kit's rules are bundled docs, opted into via `@import` (Claude Code plugins 
 
 ## Step 6 — Scaffold trackers & directories (if confirmed)
 
-- `docs/features.md` and `docs/bugs.md` — each with a short header and a status table template
-  (`ID | Title | Status | Notes`) matching the conventions the kit's commands/hooks expect.
+- `docs/features.md` and `docs/bugs.md` — each with a short header and the **six-column**
+  status table the kit's commands and hooks parse:
+  `| ID | Title | Area | Priority | Status | Notes |`.
+  All six columns are required: the `check_gh_issue_mirror.sh` and
+  `check_terminal_status_evidence.sh` hooks skip any row with fewer than six
+  cells, so a four-column table silently leaves those gates non-functional.
 - `dev-docs/plans/.gitkeep`, `dev-docs/verification/.gitkeep`, `.claude/codex-audits/.gitkeep`.
 
 Create only what's missing; never overwrite an existing tracker.

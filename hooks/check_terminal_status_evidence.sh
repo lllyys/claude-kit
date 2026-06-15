@@ -166,35 +166,50 @@ fi
 # root is the parent of the docs/ dir.
 PROJECT_DIR="$(dirname "$(dirname "$FILE_PATH")")"
 EVIDENCE_DIR="$PROJECT_DIR/dev-docs/verification"
-MISSING=""
 
+# A valid evidence file must: match <kind>-<id>-*.md, be non-empty, carry YAML
+# frontmatter, record a passing result (result/verdict/status: pass), and be
+# git-tracked (not an untracked or empty placeholder) when git is available.
+# Filename-existence alone is NOT sufficient.
+valid_evidence() {
+    local kind="$1" id="$2" f
+    for f in "$EVIDENCE_DIR/${kind}-${id}-"*.md; do
+        [[ -s "$f" ]] || continue
+        grep -Eq '^---[[:space:]]*$' "$f" 2>/dev/null || continue
+        grep -Eqi '^[[:space:]]*(result|verdict|status)[[:space:]]*:[[:space:]]*pass\b' "$f" 2>/dev/null || continue
+        if command -v git >/dev/null 2>&1 && git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+            git -C "$PROJECT_DIR" ls-files --error-unmatch -- "$f" >/dev/null 2>&1 || continue
+        fi
+        return 0
+    done
+    return 1
+}
+
+MISSING=""
 for id in $TRANSITIONS; do
-    # Match feature-<id>-*.md or bug-<id>-*.md.
-    if ! ls "$EVIDENCE_DIR/${KIND}-${id}-"*.md >/dev/null 2>&1; then
-        MISSING="$MISSING $KIND #$id"
-    fi
+    valid_evidence "$KIND" "$id" || MISSING="$MISSING $KIND #$id"
 done
 
 if [[ -n "$MISSING" ]]; then
     cat >&2 <<EOF
 [verification-evidence-hook] BLOCKED.
 
-The edit you're about to write flips${MISSING} to ${TERMINAL_RE}, but
-no matching verification evidence file exists in
-\`dev-docs/verification/\`.
+The edit you're about to write flips${MISSING} to ${TERMINAL_RE}, but no
+*valid* verification evidence file exists in \`dev-docs/verification/\`. A valid
+evidence file is non-empty, has YAML frontmatter recording \`result: pass\`, and
+is committed/tracked in git — an empty, untracked, or non-passing placeholder
+does not satisfy the gate.
 
 Expected file(s):
 EOF
     for id in $TRANSITIONS; do
-        if ! ls "$EVIDENCE_DIR/${KIND}-${id}-"*.md >/dev/null 2>&1; then
-            echo "  - dev-docs/verification/${KIND}-${id}-$(date +%Y%m%d).md" >&2
-        fi
+        valid_evidence "$KIND" "$id" || echo "  - dev-docs/verification/${KIND}-${id}-$(date +%Y%m%d).md  (result: pass, committed)" >&2
     done
     cat >&2 <<EOF
 
-Run the verification per .claude/rules/47-feature-workflow.md Gate 5,
-write the evidence file (schema: dev-docs/verification/SCHEMA.md),
-then retry the edit.
+Run the verification per .claude/rules/47-feature-workflow.md Gate 5, write the
+evidence file (schema: dev-docs/verification/SCHEMA.md) with a passing result,
+commit it, then retry the edit.
 EOF
     exit 2
 fi

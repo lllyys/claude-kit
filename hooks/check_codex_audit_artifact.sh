@@ -20,13 +20,10 @@ if ! command -v jq >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
     exit 2
 fi
 
-TOOL_NAME="$(printf '%s' "$INPUT" | jq -r '.tool_name // ""')"
+TOOL_NAME="$(printf '%s' "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null || true)"
 [[ "$TOOL_NAME" == "Bash" ]] || exit 0
 
-COMMAND="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')"
-if ! printf '%s' "$COMMAND" | grep -qE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)'; then
-    exit 0
-fi
+COMMAND="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null || true)"
 
 block() {
     echo "[codex-audit-merge-gate] BLOCKED." >&2
@@ -35,39 +32,62 @@ block() {
     exit 2
 }
 
-# Require an explicit PR number so the hook can validate the intended PR even
-# when the command is run from main/master or another worktree.
-if ! PR_NUMBER="$(COMMAND="$COMMAND" python3 - <<'PYEOF'
+# Detect `gh pr merge` AND extract the PR number in one parser pass, so an
+# absolute-path gh (`/usr/bin/gh`) can't slip past a surface regex. Compound
+# commands are refused: a PR number from a later merge must not license an
+# earlier unnumbered one. Output: SKIP | NEEDNUM | BLOCK:<msg> | <pr-number>.
+DETECT="$(COMMAND="$COMMAND" python3 - <<'PYEOF'
 import os
 import re
 import shlex
 import sys
 
+cmd = os.environ.get("COMMAND", "")
+
+# Shell control operators or substitutions => too ambiguous to validate safely.
+compound = bool(re.search(r"[;&|]|\$\(", cmd)) or ("`" in cmd)
+
 try:
-    tokens = shlex.split(os.environ["COMMAND"])
-except ValueError as exc:
-    print(f"parse error: {exc}")
-    sys.exit(1)
+    tokens = shlex.split(cmd)
+except ValueError:
+    print("BLOCK:could not parse the merge command")
+    sys.exit(0)
 
-for i in range(len(tokens) - 2):
-    if tokens[i].rsplit("/", 1)[-1] != "gh":
-        continue
-    if tokens[i + 1 : i + 3] != ["pr", "merge"]:
-        continue
-    for token in tokens[i + 3 :]:
-        match = re.fullmatch(r"#?([0-9]+)", token)
-        if match:
-            print(match.group(1))
-            sys.exit(0)
-        match = re.search(r"/pull/([0-9]+)(?:/?$)", token)
-        if match:
-            print(match.group(1))
-            sys.exit(0)
+def is_gh(tok):
+    return tok.rsplit("/", 1)[-1] == "gh"
 
-sys.exit(1)
+invocations = [
+    i for i in range(len(tokens) - 2)
+    if is_gh(tokens[i]) and tokens[i + 1 : i + 3] == ["pr", "merge"]
+]
+
+if not invocations:
+    print("SKIP")
+    sys.exit(0)
+if compound or len(invocations) > 1:
+    print("BLOCK:run a single `gh pr merge <N>` as its own command (no chaining or substitutions)")
+    sys.exit(0)
+
+for token in tokens[invocations[0] + 3:]:
+    if is_gh(token):
+        break
+    m = re.fullmatch(r"#?([0-9]+)", token) or re.search(r"/pull/([0-9]+)/?$", token)
+    if m:
+        print(m.group(1))
+        sys.exit(0)
+
+print("NEEDNUM")
 PYEOF
-)"; then
-    block "Use an explicit PR number: gh pr merge <N> [flags]. The audit gate cannot safely infer a PR from the current branch."
+)"
+
+case "$DETECT" in
+    SKIP) exit 0 ;;
+    NEEDNUM) block "Use an explicit PR number: gh pr merge <N> [flags]. The audit gate cannot safely infer a PR from the current branch." ;;
+    BLOCK:*) block "${DETECT#BLOCK:}" ;;
+    *) PR_NUMBER="$DETECT" ;;
+esac
+if [[ ! "${PR_NUMBER:-}" =~ ^[0-9]+$ ]]; then
+    block "Could not determine the PR number for the merge command."
 fi
 
 HOOK_CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty')"
@@ -83,9 +103,9 @@ if ! PR_JSON="$(gh pr view "$PR_NUMBER" --json headRefName,headRefOid,baseRefNam
     block "gh could not resolve PR #$PR_NUMBER. Confirm the PR exists and GitHub is reachable, then retry."
 fi
 
-HEAD_BRANCH="$(printf '%s' "$PR_JSON" | jq -r '.headRefName // empty')"
-HEAD_OID="$(printf '%s' "$PR_JSON" | jq -r '.headRefOid // empty')"
-BASE_BRANCH="$(printf '%s' "$PR_JSON" | jq -r '.baseRefName // empty')"
+HEAD_BRANCH="$(printf '%s' "$PR_JSON" | jq -r '.headRefName // empty' 2>/dev/null || true)"
+HEAD_OID="$(printf '%s' "$PR_JSON" | jq -r '.headRefOid // empty' 2>/dev/null || true)"
+BASE_BRANCH="$(printf '%s' "$PR_JSON" | jq -r '.baseRefName // empty' 2>/dev/null || true)"
 if [[ -z "$HEAD_BRANCH" || ! "$HEAD_OID" =~ ^[0-9a-fA-F]{40}$ || -z "$BASE_BRANCH" ]]; then
     block "PR #$PR_NUMBER did not return a valid head branch, head commit, and base branch."
 fi
@@ -112,7 +132,10 @@ if ! git cat-file -e "${BASE_REF}^{commit}" 2>/dev/null; then
 fi
 
 # Docs/meta-only PRs do not require a code audit.
-DOC_META_RE='(\.(md|mdx|txt|rst)$|^docs/|^dev-docs/|^\.claude/)'
+# Exempt only by documentation EXTENSION, not by directory: an executable or
+# config file under docs/, dev-docs/, or .claude/ (e.g. .claude/hooks/x.sh) is
+# source-touching and must still be audited.
+DOC_META_RE='\.(md|mdx|txt|rst)$'
 if ! CHANGED="$(git diff "${BASE_REF}...${HEAD_OID}" --name-only 2>/dev/null)"; then
     block "Could not compute the changed files for PR #$PR_NUMBER."
 fi
