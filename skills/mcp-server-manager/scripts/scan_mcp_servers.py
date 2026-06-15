@@ -115,7 +115,10 @@ def collect_from_mcp_json_files(project_path, max_depth, out):
         collect_from_mcp_servers(data.get("mcpServers"), f"mcp.json:{path}", out)
 
 
-def build_command(entry):
+REDACTED = "<REDACTED:set-from-source-config>"
+
+
+def build_command(entry, reveal=False):
     name = shlex.quote(entry["name"])
     if entry["kind"] == "http" and entry.get("url"):
         cmd = f"codex mcp add {name} --url {shlex.quote(str(entry['url']))}"
@@ -125,8 +128,9 @@ def build_command(entry):
         return cmd
     if entry["kind"] == "stdio" and entry.get("command"):
         cmd = f"codex mcp add {name}"
-        for k, v in entry.get("env", {}).items():
-            cmd += f" --env {shlex.quote(str(k))}={shlex.quote(str(v))}"
+        for k in entry.get("env", {}):
+            val = str(entry["env"][k]) if reveal else REDACTED
+            cmd += f" --env {shlex.quote(str(k))}={shlex.quote(val)}"
         parts = [entry["command"]] + entry.get("args", [])
         cmd += " -- " + " ".join(shlex.quote(str(p)) for p in parts)
         return cmd
@@ -139,6 +143,9 @@ def main():
     parser.add_argument("--project", default=os.getcwd())
     parser.add_argument("--max-depth", type=int, default=4)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--reveal-env", action="store_true",
+                        help="Print real env values (SECRETS) instead of redacting them. "
+                             "Off by default so API keys/tokens never enter logs or the model transcript.")
     args = parser.parse_args()
 
     entries = []
@@ -146,7 +153,10 @@ def main():
     collect_from_mcp_json_files(args.project, args.max_depth, entries)
 
     if args.json:
-        print(json.dumps(entries, indent=2))
+        out = entries
+        if not args.reveal_env:
+            out = [{**e, "env": {k: REDACTED for k in e.get("env", {})}} for e in entries]
+        print(json.dumps(out, indent=2))
         return
 
     if not entries:
@@ -166,11 +176,14 @@ def main():
             args_str = " ".join(str(a) for a in e.get("args", []))
             print(f"  command: {e['command']} {args_str}".rstrip())
         if e.get("env"):
-            env_items = [f"{k}={v}" for k, v in e["env"].items()]
-            print(f"  env: {', '.join(env_items)}")
+            if args.reveal_env:
+                env_items = [f"{k}={v}" for k, v in e["env"].items()]
+                print(f"  env: {', '.join(env_items)}")
+            else:
+                print(f"  env keys: {', '.join(e['env'].keys())}  (values hidden — pass --reveal-env to show)")
         if name_counts[e["name"]] > 1:
             print("  note: duplicate name detected; consider renaming")
-        cmd = build_command(e)
+        cmd = build_command(e, reveal=args.reveal_env)
         if cmd:
             print(f"  codex mcp add: {cmd}")
         else:

@@ -97,10 +97,13 @@ TEST_COMMENTS="$(
       done
 )"
 
-# Exact, boundary-aware membership — `WI-1.2` must not match `WI-1.20`/`WI-1.2a`.
+# Exact, boundary-aware membership — `WI-1.2` must not match `WI-1.20`, `WI-1.2a`,
+# `WI-1.2.3`, or `WI-1.2-x`, but must still match before `)`, a space, or a
+# sentence-ending `.` (the right boundary rejects a `.`/`-` only when it leads
+# into another id character).
 wi_present() {
   local wi_esc="${1//./\\.}"
-  local re="(^|[^A-Za-z0-9.-])${wi_esc}([^A-Za-z0-9]|\$)"
+  local re="(^|[^A-Za-z0-9.-])${wi_esc}(\$|[^A-Za-z0-9.-]|[.-](\$|[^A-Za-z0-9]))"
   printf '%s' "$2" | grep -Eq "$re"
 }
 

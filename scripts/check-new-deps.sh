@@ -137,6 +137,34 @@ go_escape() {
 old_blob() { git show "${BASE}:$1" 2>/dev/null || true; }
 new_blob() { [[ -f "$1" ]] && cat -- "$1" 2>/dev/null || true; }
 
+# Does the NEW manifest parse? Used to FAIL CLOSED: an empty extraction from an
+# UNPARSEABLE manifest must not be reported as "no new dependencies". Returns 0
+# when it parses (or cannot be structurally validated because the tool is absent).
+manifest_parses() {  # path content
+  case "$(basename -- "$1")" in
+    package.json)
+      printf '%s' "$2" | jq -e . >/dev/null 2>&1 ;;
+    pyproject.toml|Cargo.toml)
+      command -v python3 >/dev/null 2>&1 || return 0   # no tomllib -> heuristic, can't validate
+      printf '%s' "$2" | python3 -c '
+import sys
+try:
+    import tomllib
+except ModuleNotFoundError:
+    sys.exit(0)
+try:
+    tomllib.loads(sys.stdin.read())
+except Exception:
+    sys.exit(1)
+' ;;
+    go.mod)
+      command -v go >/dev/null 2>&1 || return 0   # regex fallback, can't validate
+      local tmp rc; tmp="$(mktemp)"; printf '%s' "$2" > "$tmp"
+      go mod edit -json "$tmp" >/dev/null 2>&1; rc=$?; rm -f "$tmp"; return "$rc" ;;
+    *) return 0 ;;   # requirements.txt etc. — line-based, nothing to fail to parse
+  esac
+}
+
 # ── New-dependency extractors: print probe-names present in NEW but not OLD ──
 npm_keys() {
   printf '%s' "$1" | jq -r \
@@ -282,6 +310,11 @@ process_manifest() {
   esac
   ANY=1
   old="$(old_blob "$f")"; new="$(new_blob "$f")"
+  if [[ -n "$new" ]] && ! manifest_parses "$f" "$new"; then
+    note_indet "$f — new manifest does not parse (malformed?); not inspected"
+    echo "[$label] $f changed — UNPARSEABLE, fail-closed (indeterminate)."
+    return 0
+  fi
   case "$(basename -- "$f")" in
     package.json)     names="$(extract_npm "$old" "$new")" ;;
     requirements.txt) names="$(extract_pypi_req "$old" "$new")" ;;
@@ -298,12 +331,17 @@ process_manifest() {
   echo
 }
 
+if ! CHANGED_LIST="$(git diff "$BASE" --name-only 2>/dev/null)"; then
+  echo "could not diff against $BASE (git error) — result indeterminate." >&2
+  [[ "$ALLOW_INDETERMINATE" == "1" ]] && exit 0
+  exit 3
+fi
 while IFS= read -r f; do
   [[ -z "$f" ]] && continue
   case "$(basename -- "$f")" in
     package.json|requirements.txt|pyproject.toml|Cargo.toml|go.mod) process_manifest "$f" ;;
   esac
-done < <(git diff "$BASE" --name-only 2>/dev/null)
+done <<< "$CHANGED_LIST"
 
 # ── Verdict ──────────────────────────────────────────────────────────────────
 if (( ANY == 0 )); then
